@@ -9,6 +9,7 @@ import tensorflow as tf
 
 from tensorflow.models.rnn.ptb import reader
 import imdb_data
+import matplotlib.pyplot as plt
 
 
 flags = tf.flags
@@ -33,12 +34,36 @@ class SentimentModel(object):
         self._input_data = tf.placeholder(tf.int32, [batch_size, config.max_len])
         self._targets = tf.placeholder(tf.int32, [batch_size])
 
-        embedding = tf.get_variable("embedding", [vocab_size, size])
-        inputs = tf.nn.embedding_lookup(embedding, self._input_data)
+        #sizeMore = 100
 
-        output = tf.reduce_sum(inputs, 1)
+        embedding = tf.get_variable("embedding", [vocab_size, size])
+        inputs = tf.nn.embedding_lookup(embedding, self._input_data) # batch_size, max_len, size
+
+
+        w0 = tf.get_variable("w0", [batch_size, max_len, 10])
+        b0 = tf.get_variable("b0", [batch_size, 2])
+
+        print(inputs.get_shape())
+        print(w0.get_shape())
+        print(b0.get_shape())
+
+        ma0 = tf.matmul(inputs, w0)
+        ma = ma0 + b0
+        Y1 = tf.nn.relu(ma)
+
+
+
+
+        output = tf.reduce_sum(Y1, 1) # batch_size, size
+        #w = tf.get_variable("w", [size, 20])
+        #b = tf.get_variable("b", [20])
+        
+
+
         softmax_w = tf.get_variable("softmax_w", [size, 2])
         softmax_b = tf.get_variable("softmax_b", [2])
+
+        
         
         logits = tf.matmul(output, softmax_w) + softmax_b
         prediction = tf.nn.softmax(logits)
@@ -110,8 +135,8 @@ def run_epoch(session, m, data, eval_op, id2word, verbose=False):
     epoch_size = len(data[0])//m.batch_size
     start_time = time.time()
     costs = 0.0
-    correct_answers = 0.0
-
+    correct_answers = 0
+	
     seqs, labels = data
     MAXLEN = 100
     for step in range(epoch_size):
@@ -134,7 +159,8 @@ def run_epoch(session, m, data, eval_op, id2word, verbose=False):
                    correct_answers / (step*m.batch_size),
                    step * m.batch_size / (time.time() - start_time)))
 
-    return (costs / epoch_size, correct_answers / (epoch_size * m.batch_size))
+ 
+    return (np.exp(costs / epoch_size), correct_answers / (step*m.batch_size))
 
 
 
@@ -145,7 +171,10 @@ def main(_):
 
     train_data, valid_data, test_data = imdb_data.load_data()
     word2id, id2word = imdb_data.load_dict_imdb()
-    
+
+    accsTrain = []
+    accsTest = []
+
 
     config = Config()
     eval_config = Config()
@@ -168,24 +197,25 @@ def main(_):
             m.assign_lr(session, config.learning_rate * lr_decay)
 
             print("Epoch: %d Learning rate: %.3f" % (i + 1, session.run(m.lr)))
-            train_perplexity, train_accuracy = run_epoch(session, m, train_data, m.train_op, id2word,
+            train_perplexity, accTrain = run_epoch(session, m, train_data, m.train_op, id2word,
                                        verbose=True)
-            print("Epoch: %d Train Perplexity: %.3f Train Accuracy: %.3f" % \
-                  (i + 1, train_perplexity, train_accuracy))
-            valid_perplexity, valid_accuracy = run_epoch(session,
-                                                         mvalid,
-                                                         valid_data,
-                                                         tf.no_op(),
-                                                         id2word)
-            print("Epoch: %d Valid Perplexity: %.3f Valid Accuracy: %.3f" % \
-                  (i + 1, valid_perplexity, valid_accuracy))
+            accsTrain.append(accTrain)
+            
+            print("Epoch: %d Train Perplexity: %.3f" % (i + 1, train_perplexity))
+            valid_perplexity, crap = run_epoch(session, mvalid, valid_data, tf.no_op(),
+                                         id2word)
+            print("Epoch: %d Valid Perplexity: %.3f" % (i + 1, valid_perplexity))
 
-        test_perplexity, test_accuracy = run_epoch(session,
-                                                   mtest,
-                                                   test_data,
-                                                   tf.no_op(),
-                                                   id2word)
-        print("Test Perplexity: %.3f Test Accuracy" % (test_perplexity,test_accuracy))
+            test_perplexity, accTest = run_epoch(session, mtest, test_data, tf.no_op(),id2word)
+            accsTest.append(accTest)
+            print("Test Perplexity: %.3f" % test_perplexity)
+        
+    plt.figure()
+    plt.plot(accsTrain, label="train")
+    plt.plot(accsTest, label="test")
+    plt.show()
+    plt.close()    
+
 
 
 if __name__ == "__main__":
